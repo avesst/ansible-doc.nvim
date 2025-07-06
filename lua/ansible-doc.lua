@@ -88,7 +88,7 @@ end
 
 local function parse_line()
   local line = vim.api.nvim_get_current_line()
-  local pattern = "([%w_%.%-]+):$"
+  local pattern = "([%w_%.%-]+):"
 
   for match in line:gmatch(pattern) do
     return match
@@ -143,7 +143,7 @@ function M.search()
 
   local search_string = parse_line()
   if not search_string then
-    vim.notify("ansible-doc: Couldn't find a module directive under the cursor", vim.log.levels.WARN)
+    vim.notify("ansible-doc: Couldn't find a possible module directive under the cursor", vim.log.levels.WARN)
     return
   end
 
