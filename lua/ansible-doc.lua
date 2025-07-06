@@ -1,7 +1,12 @@
+local actions = require "telescope.actions"
+local action_state = require "telescope.actions.state"
+local pickers = require "telescope.pickers"
+local finders = require "telescope.finders"
+local conf = require("telescope.config").values
+
 local M = {}
 local cache_dir = vim.fn.stdpath("cache") .. "/ansible-doc"
 local cache_file = cache_dir .. "/modules"
-local fqcn = nil
 
 local function init_cache()
   -- Set up cache directory
@@ -24,7 +29,12 @@ local function init_cache()
 end
 
 local function check_executable()
-  if vim.fn.executable("ansible-doc") > 0 then return true else return false end
+  if vim.fn.executable("ansible-doc") > 0 then
+    return true
+  else
+    vim.notify("ansible-doc: Can't find ansible-doc executable in $PATH", vim.log.levels.ERROR)
+    return false
+  end
 end
 
 local function build_cache(force_rebuild)
@@ -67,6 +77,17 @@ local function build_cache(force_rebuild)
   end
 end
 
+local function load_cache()
+  local lines = io.lines(vim.fn.stdpath("cache") .. "/ansible-doc/modules")
+  local modules = {}
+
+  for line in lines do
+    table.insert(modules, line)
+  end
+
+  return modules
+end
+
 local function search_cache(search_string)
   local pattern = search_string .. "$"
 
@@ -75,11 +96,11 @@ local function search_cache(search_string)
     pattern = "%." .. pattern
   end
 
-  for line in io.lines(cache_file) do
-    local match = string.match(line, pattern)
+  for _, module in ipairs(load_cache()) do
+    local match = string.match(module, pattern)
 
     if match then
-      return line
+      return module
     end
   end
 
@@ -111,13 +132,14 @@ local function get_window_config()
     col = col,
     style = "minimal",
     border = "rounded",
-    title = "Ansible Documentation - " .. fqcn,
+    title = "Ansible Documentation - ",
     title_pos = "center"
   }
 end
 
-local function view_documentation()
+local function view_documentation(fqcn)
   local config = get_window_config()
+  config.title = config.title .. fqcn
   local buf = vim.api.nvim_create_buf(false, true)
 
   vim.api.nvim_open_win(buf, true, config)
@@ -132,14 +154,13 @@ local function view_documentation()
       end)
     end
   })
-  vim.api.nvim_command("startinsert")
+  vim.schedule(function()
+    vim.api.nvim_command("startinsert")
+  end)
 end
 
-function M.search()
-  if not check_executable() then
-    vim.notify("ansible-doc: Can't find ansible-doc executable in $PATH", vim.log.levels.ERROR)
-    return
-  end
+function M.search_cursor()
+  if not check_executable() then return end
 
   local search_string = parse_line()
   if not search_string then
@@ -147,13 +168,35 @@ function M.search()
     return
   end
 
-  fqcn = search_cache(search_string)
+  local fqcn = search_cache(search_string)
   if not fqcn then
     vim.notify("ansible-doc: Found no module that matches \"" .. search_string .. "\"", vim.log.levels.WARN)
     return
   end
 
-  view_documentation()
+  view_documentation(fqcn)
+end
+
+function M.search(opts)
+  if not check_executable() then return end
+
+  local modules = load_cache()
+  opts = opts or require("telescope.themes").get_dropdown {}
+  pickers.new(opts, {
+    prompt_title = "Ansible modules",
+    finder = finders.new_table {
+      results = modules
+    },
+    sorter = conf.generic_sorter(opts),
+    attach_mappings = function(prompt_bufnr, _)
+      actions.select_default:replace(function()
+        actions.close(prompt_bufnr)
+        local selection = action_state.get_selected_entry()
+        view_documentation(selection[1])
+      end)
+      return true
+    end
+  }):find()
 end
 
 function M.init()
@@ -161,12 +204,13 @@ function M.init()
   build_cache()
 
   vim.api.nvim_create_user_command("AnsibleDoc", function(opts)
-    if opts.args == 'search' then M.search() end
-    if opts.args == 'rebuild' then build_cache(true) end
+    if opts.args == "search" then M.search() end
+    if opts.args == "search_cursor" then M.search_cursor() end
+    if opts.args == "rebuild" then build_cache(true) end
   end, {
     nargs = 1,
     complete = function(arg_lead, _, _)
-      local options = { "search", "rebuild" }
+      local options = { "search", "search_cursor", "rebuild" }
       local matches = {}
 
       for _, option in ipairs(options) do
