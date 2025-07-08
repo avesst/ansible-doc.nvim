@@ -154,7 +154,10 @@ local function view_documentation(fqcn)
   vim.api.nvim_open_win(buf, true, config)
   vim.keymap.set("t", "<ESC>", "<C-\\><C-n>", { buffer = true, silent = true })
 
-  vim.fn.jobstart({ "ansible-doc", fqcn }, { term = true, env = { PAGER = 'less -+F' } })
+  local pager = "less -+F"
+  if vim.o.incsearch then pager = pager .. " --incsearch" end
+
+  vim.fn.jobstart({ "ansible-doc", fqcn }, { term = true, env = { PAGER = pager } })
 
   vim.schedule(function()
     vim.api.nvim_command("startinsert")
