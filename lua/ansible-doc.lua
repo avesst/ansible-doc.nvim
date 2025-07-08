@@ -140,12 +140,10 @@ end
 local function view_documentation(fqcn)
   local config = get_window_config()
   config.title = config.title .. fqcn
-  local buf = vim.api.nvim_create_buf(false, true)
 
-  vim.api.nvim_open_win(buf, true, config)
-  vim.api.nvim_command("terminal ansible-doc " .. fqcn)
-  vim.api.nvim_set_option_value("buftype", "terminal", { buf = buf })
+  local buf = vim.api.nvim_create_buf(false, true)
   vim.keymap.set("t", "<ESC>", "<C-\\><C-n>", { buffer = true, silent = true })
+
   vim.api.nvim_create_autocmd("TermClose", {
     buffer = buf,
     callback = function()
@@ -154,6 +152,11 @@ local function view_documentation(fqcn)
       end)
     end
   })
+
+  vim.api.nvim_open_win(buf, true, config)
+
+  vim.fn.jobstart({ "ansible-doc", fqcn }, { term = true, env = { PAGER = 'less -+F' } })
+
   vim.schedule(function()
     vim.api.nvim_command("startinsert")
   end)
