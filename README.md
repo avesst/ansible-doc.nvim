@@ -1,6 +1,9 @@
 # ansible-doc.nvim
 > Simple plugin to quickly peek Ansible modules and their documentation.
 
+> [!WARNING]
+> This plugin is under development, and as such experimental. Breaking changes most likely will occur.
+
 ## Requirements
 - Neovim >= 0.7.0
 - Telescope
