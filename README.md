@@ -15,7 +15,7 @@
   ft = "yaml.ansible", -- optional
   keys = {
     { "<leader>am", "<cmd>AnsibleDoc search<cr>",        desc = "Search Ansible plugins" },
-    { "<leader>ad", "<cmd>AnsibleDoc search_cursor<cr>", desc = "Search cursor line for Ansible modules" }
+    { "<leader>ad", "<cmd>AnsibleDoc search_cursor<cr>", desc = "Search cursor line for Ansible plugins" }
   }
 }
 ```
@@ -23,12 +23,12 @@
 ### Usage
 
 > [!NOTE]
-> On first load, the plugins uses `ansible-doc -l` to build a cache of all the installed modules on your system, which it then uses to search for modules. If you subsequently install/uninstall any modules, you need to run `:AnsibleDoc rebuild` to rebuild the cache.
+> On first load, the plugins uses `ansible-doc -l` to build a cache of all the installed plugins on your system, which it then uses to search for plugins. If you subsequently install/uninstall any plugins, you need to run `:AnsibleDoc rebuild` to rebuild the cache.
 
 #### Commands
 - `:AnsibleDoc search`
 
-    Brings up a Telescope window to search all installed modules. Pressing `<CR>` opens documentation.
+    Brings up a Telescope window to search all installed plugins. Pressing `<CR>` opens documentation.
 
 - `:AnsibleDoc search_cursor`
 
