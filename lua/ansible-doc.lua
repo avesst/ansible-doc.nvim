@@ -1,110 +1,124 @@
-local actions = require "telescope.actions"
-local action_state = require "telescope.actions.state"
-local pickers = require "telescope.pickers"
-local finders = require "telescope.finders"
-local conf = require("telescope.config").values
-
 local M = {}
-local cache_dir = vim.fn.stdpath("cache") .. "/ansible-doc"
-local cache_file = cache_dir .. "/modules"
+local cache_dir_path = vim.fn.stdpath("cache") .. "/ansible-doc"
+local cache_file_path = cache_dir_path .. "/plugins"
 
-local function init_cache()
-  -- Set up cache directory
-  if vim.fn.isdirectory(cache_dir) == 0 then
-    vim.fn.mkdir(cache_dir, "p")
+local plugin_types = {
+  "become",
+  "cache",
+  "callback",
+  "cliconf",
+  "connection",
+  "httpapi",
+  "inventory",
+  "lookup",
+  "netconf",
+  "shell",
+  "vars",
+  "module",
+  "strategy",
+  "test",
+  "filter",
+  "role",
+  "keyword"
+}
+
+local function cache_init(force_build, on_complete)
+  if vim.fn.isdirectory(cache_dir_path) == 0 then vim.fn.mkdir(cache_dir_path, "p") end
+
+  if vim.fn.filereadable(cache_file_path) == 0 then
+    local file = io.open(cache_file_path, "w")
+    if file then io.close(file) end
   end
 
-  local file = io.open(cache_file, "r")
-  if file then
-    file:close()
+  local cache_size = vim.fn.getfsize(cache_file_path)
+
+  if not force_build and cache_size > 0 then
+    if on_complete then on_complete(true) end
     return
   end
 
-  file = io.open(cache_file, "w")
-  if file then
-    file:close()
-  else
-    vim.notify("ansible-doc: Error: Could not create cache file!")
+  vim.notify("ansible-doc: Building plugin cache, please wait..")
+
+  local lines = {}
+  local remaining_types = vim.deepcopy(plugin_types)
+
+  local function process_next()
+    if #remaining_types == 0 then
+      local cache, err = io.open(cache_file_path, "w")
+      if not cache then
+        vim.notify("ansible-doc: Can't open cache file for writing: " .. err, vim.log.levels.ERROR)
+        return
+      else
+        cache:write(table.concat(lines))
+        cache:close()
+        vim.notify("ansible-doc: Cache built successfully.")
+      end
+      if on_complete then on_complete(true) end
+      return
+    end
+
+    local current_type = table.remove(remaining_types, 1)
+    vim.system({ "ansible-doc", "-t", current_type, "-l" }, {
+      env = { ["PAGER"] = "cat" }
+    }, function(obj)
+      if obj.code == 0 then
+        for line in string.gmatch(obj.stdout, "[^\n]+") do
+          local plugin = string.match(line, "^(%S+)")
+          if plugin then
+            table.insert(lines, current_type .. ";" .. plugin .. "\n")
+          end
+        end
+      else
+        vim.notify("ansible-doc: Failed to build cache for type " .. current_type .. ": " .. (obj.stderr or ""),
+          vim.log.levels.WARN)
+      end
+      process_next() -- Chain to next type
+    end)
   end
+
+  process_next() -- Start the chain
 end
 
 local function check_executable()
-  if vim.fn.executable("ansible-doc") > 0 then
-    return true
-  else
+  if vim.fn.executable("ansible-doc") == 0 then
     vim.notify("ansible-doc: Can't find ansible-doc executable in $PATH", vim.log.levels.ERROR)
     return false
   end
-end
 
-local function build_cache(force_rebuild)
-  local cache, err = io.open(cache_file, "r")
-  if not cache then
-    vim.notify("ansible-doc: Can't open cache file for reading: " .. err, vim.log.levels.ERROR)
-    return nil
-  end
-
-  if force_rebuild then
-    cache = io.open(cache_file, "w")
-    if cache then cache:close() end
-  else
-    local cache_size = cache:seek("end")
-    if cache_size ~= 0 then return end
-  end
-
-  vim.notify("ansible-doc: Building module cache. Use :AnsibleDoc rebuild to rebuild cache.")
-
-  local result = vim.system({ "ansible-doc", "-l" }, {
-    env = { { "PAGER", "cat" } }
-  }):wait()
-
-  cache, err = io.open(cache_file, "a")
-  if not cache then
-    vim.notify("ansible-doc: Can't open cache file for appending: " .. err, vim.log.levels.ERROR)
-  end
-
-  for line in string.gmatch(result.stdout, "[^\n]+") do
-    local module = string.match(line, "^(%S+)")
-    if module then
-      if cache then
-        cache:write(module .. "\n")
-      end
-    end
-  end
-
-  if cache then
-    cache:close()
-  end
+  return true
 end
 
 local function load_cache()
-  local lines = io.lines(vim.fn.stdpath("cache") .. "/ansible-doc/modules")
-  local modules = {}
+  local plugins = {}
 
-  for line in lines do
-    table.insert(modules, line)
-  end
-
-  return modules
-end
-
-local function search_cache(search_string)
-  local pattern = search_string .. "$"
-
-  -- If search string is not FQCN, prepend a '.' to the pattern to only match with full resource name of FQCN
-  if not string.match(search_string, "%w+%.%w+%.%w+") then
-    pattern = "%." .. pattern
-  end
-
-  for _, module in ipairs(load_cache()) do
-    local match = string.match(module, pattern)
-
-    if match then
-      return module
+  local cache_lines = io.lines(cache_file_path)
+  for line in cache_lines do
+    for type, name in string.gmatch(line, "(.+)%;(.+)") do
+      table.insert(plugins, { name = name, type = type })
     end
   end
 
-  return nil
+  table.sort(plugins, function(a, b)
+    return a.name < b.name
+  end)
+
+  return plugins
+end
+
+local function search_cache(search_string)
+  local patterns = {
+    { pattern = "^" .. search_string .. "$" },  -- FQCN
+    { pattern = "^" .. search_string .. ":$" }, -- Keyword with colon match
+    { pattern = "%." .. search_string .. "$" }, -- Resource match (short name)
+  }
+
+  for _, plugin in ipairs(load_cache()) do
+    for _, pattern in ipairs(patterns) do
+      if string.match(plugin.name, pattern.pattern) then
+        return plugin
+      end
+    end
+  end
 end
 
 local function parse_line()
@@ -137,9 +151,9 @@ local function get_window_config()
   }
 end
 
-local function view_documentation(fqcn)
+local function view_documentation(plugin)
   local config = get_window_config()
-  config.title = config.title .. fqcn
+  config.title = config.title .. plugin.name
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_create_autocmd("TermClose", {
@@ -157,7 +171,11 @@ local function view_documentation(fqcn)
   local pager = "less -+F"
   if vim.o.incsearch then pager = pager .. " --incsearch" end
 
-  vim.fn.jobstart({ "ansible-doc", fqcn }, { term = true, env = { PAGER = pager } })
+  -- Keywords has a colon suffix which need to be removed before calling ansible-doc
+  local name = string.gsub(plugin.name, ":", "")
+
+  vim.fn.jobstart({ "ansible-doc", "-t", plugin.type, name },
+    { term = true, env = { PAGER = pager } })
 
   vim.schedule(function()
     vim.api.nvim_command("startinsert")
@@ -167,51 +185,109 @@ end
 function M.search_cursor()
   if not check_executable() then return end
 
-  local search_string = parse_line()
-  if not search_string then
-    vim.notify("ansible-doc: Couldn't find a possible module directive under the cursor", vim.log.levels.WARN)
-    return
+  local function perform_search()
+    local search_string = parse_line()
+    if not search_string then
+      vim.notify("ansible-doc: Couldn't find a possible module directive under the cursor", vim.log.levels.WARN)
+      return
+    end
+    local plugin = search_cache(search_string)
+    if not plugin then
+      vim.notify("ansible-doc: Found no plugin that matches \"" .. search_string .. "\"", vim.log.levels.WARN)
+      return
+    end
+
+    view_documentation(plugin)
   end
 
-  local fqcn = search_cache(search_string)
-  if not fqcn then
-    vim.notify("ansible-doc: Found no module that matches \"" .. search_string .. "\"", vim.log.levels.WARN)
-    return
+  cache_init(false, function(success)
+    if success then
+      vim.schedule(perform_search)
+    end
+  end)
+end
+
+local function calculate_picker_width()
+  local width = 0
+
+  for _, plugin in ipairs(load_cache()) do
+    local plugin_width = #(plugin.name .. plugin.type)
+    if plugin_width > width then width = plugin_width end
   end
 
-  view_documentation(fqcn)
+  return math.floor(math.max(width + 10, vim.o.columns * 0.35))
 end
 
 function M.search(opts)
   if not check_executable() then return end
 
-  local modules = load_cache()
-  opts = opts or require("telescope.themes").get_dropdown {}
-  pickers.new(opts, {
-    prompt_title = "Ansible modules",
-    finder = finders.new_table {
-      results = modules
-    },
-    sorter = conf.generic_sorter(opts),
-    attach_mappings = function(prompt_bufnr, _)
-      actions.select_default:replace(function()
-        actions.close(prompt_bufnr)
-        local selection = action_state.get_selected_entry()
-        view_documentation(selection[1])
-      end)
-      return true
+  local function open_picker()
+    local actions = require "telescope.actions"
+    local action_state = require "telescope.actions.state"
+    local pickers = require "telescope.pickers"
+    local finders = require "telescope.finders"
+    local conf = require("telescope.config").values
+    local entry_display = require "telescope.pickers.entry_display"
+
+    local plugins = load_cache()
+
+    local picker_width = calculate_picker_width()
+
+    opts = opts or require("telescope.themes").get_dropdown {
+      layout_config = { width = picker_width }
+    }
+
+    pickers.new(opts, {
+      prompt_title = "Ansible plugins",
+      finder = finders.new_table {
+        results = plugins,
+        entry_maker = function(entry)
+          return {
+            value = entry,
+            display = function(display_entry)
+              local displayer = entry_display.create {
+                separator = "",
+                items = {
+                  { width = #display_entry.value.name },
+                  { width = (opts.layout_config.width - (#display_entry.value.name + #display_entry.value.type) - 6) },
+                  { width = #display_entry.value.type },
+                }
+              }
+
+              return displayer {
+                { display_entry.value.name, "TelescopeNormal" },
+                { " " },
+                { display_entry.value.type, "TelescopeResultsDiffUntracked" }
+              }
+            end,
+            ordinal = entry.name, -- Filter on plugin name
+          }
+        end,
+      },
+      sorter = conf.file_sorter(opts),
+      attach_mappings = function(prompt_bufnr, _)
+        actions.select_default:replace(function()
+          local selection = action_state.get_selected_entry()
+          actions.close(prompt_bufnr)
+
+          view_documentation(selection.value)
+        end)
+        return true
+      end,
+    }):find()
+  end
+  cache_init(false, function(success)
+    if success then
+      vim.schedule(open_picker)
     end
-  }):find()
+  end)
 end
 
-function M.init()
-  init_cache()
-  build_cache()
-
+function M.setup()
   vim.api.nvim_create_user_command("AnsibleDoc", function(opts)
     if opts.args == "search" then M.search() end
     if opts.args == "search_cursor" then M.search_cursor() end
-    if opts.args == "rebuild" then build_cache(true) end
+    if opts.args == "rebuild" then cache_init(true) end
   end, {
     nargs = 1,
     complete = function(arg_lead, _, _)

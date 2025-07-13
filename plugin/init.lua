@@ -1,1 +1,1 @@
-require("ansible-doc").init()
+require("ansible-doc").setup()

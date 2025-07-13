@@ -1,5 +1,5 @@
 # ansible-doc.nvim
-> Simple plugin to quickly peek Ansible modules and their documentation.
+> Simple plugin to quickly peek Ansible plugins and their documentation.
 
 ## Requirements
 - Neovim >= 0.7.0
@@ -14,7 +14,7 @@
   dependencies = { 'nvim-telescope/telescope.nvim' },
   ft = "yaml.ansible", -- optional
   keys = {
-    { "<leader>am", "<cmd>AnsibleDoc search<cr>",        desc = "Search Ansible modules" },
+    { "<leader>am", "<cmd>AnsibleDoc search<cr>",        desc = "Search Ansible plugins" },
     { "<leader>ad", "<cmd>AnsibleDoc search_cursor<cr>", desc = "Search cursor line for Ansible modules" }
   }
 }
