@@ -22,6 +22,8 @@ local plugin_types = {
   "keyword"
 }
 
+local title_opt = { title = "ansible-doc" }
+
 local function cache_init(force_build, on_complete)
   if vim.fn.isdirectory(cache_dir_path) == 0 then vim.fn.mkdir(cache_dir_path, "p") end
 
@@ -37,7 +39,7 @@ local function cache_init(force_build, on_complete)
     return
   end
 
-  vim.notify("ansible-doc: Building plugin cache, please wait..")
+  vim.notify("Building plugin cache, please wait..", vim.log.levels.INFO, title_opt)
 
   local lines = {}
   local remaining_types = vim.deepcopy(plugin_types)
@@ -46,12 +48,12 @@ local function cache_init(force_build, on_complete)
     if #remaining_types == 0 then
       local cache, err = io.open(cache_file_path, "w")
       if not cache then
-        vim.notify("ansible-doc: Can't open cache file for writing: " .. err, vim.log.levels.ERROR)
+        vim.notify("Can't open cache file for writing: " .. err, vim.log.levels.ERROR, title_opt)
         return
       else
         cache:write(table.concat(lines))
         cache:close()
-        vim.notify("ansible-doc: Cache built successfully.")
+        vim.notify("Cache built successfully.", vim.log.levels.INFO, title_opt)
       end
       if on_complete then on_complete(true) end
       return
@@ -69,8 +71,8 @@ local function cache_init(force_build, on_complete)
           end
         end
       else
-        vim.notify("ansible-doc: Failed to build cache for type " .. current_type .. ": " .. (obj.stderr or ""),
-          vim.log.levels.WARN)
+        vim.notify("Failed to build cache for type " .. current_type .. ": " .. (obj.stderr or ""),
+          vim.log.levels.WARN, title_opt)
       end
       process_next() -- Chain to next type
     end)
@@ -81,7 +83,7 @@ end
 
 local function check_executable()
   if vim.fn.executable("ansible-doc") == 0 then
-    vim.notify("ansible-doc: Can't find ansible-doc executable in $PATH", vim.log.levels.ERROR)
+    vim.notify("Can't find ansible-doc executable in $PATH", vim.log.levels.ERROR, title_opt)
     return false
   end
 
@@ -188,12 +190,13 @@ function M.search_cursor()
   local function perform_search()
     local search_string = parse_line()
     if not search_string then
-      vim.notify("ansible-doc: Couldn't find a possible module directive under the cursor", vim.log.levels.WARN)
+      vim.notify("Couldn't find a possible module directive under the cursor", vim.log.levels.WARN,
+        title_opt)
       return
     end
     local plugin = search_cache(search_string)
     if not plugin then
-      vim.notify("ansible-doc: Found no plugin that matches \"" .. search_string .. "\"", vim.log.levels.WARN)
+      vim.notify("Found no plugin that matches \"" .. search_string .. "\"", vim.log.levels.WARN, title_opt)
       return
     end
 
